@@ -216,7 +216,7 @@ void CBingoCntDlg::OnBnClickedButtonConnect()
 			m_strStatus = _T("서버 접속에 실패 했습니다.");
 
 			m_bConnect = FALSE;
-			GetDlgItem(IDC_BUTTON_SEND)->EnableWindow(TRUE);
+			GetDlgItem(IDC_BUTTON_SEND)->EnableWindow(FALSE);
 		}
 		UpdateData(FALSE);
 	}
@@ -229,8 +229,7 @@ void CBingoCntDlg::SendGame(int iType, CString strTmp)
 	UpdateData(TRUE);
 	char pTmp[256];
 	memset(pTmp, '\0', 256);
-	sprintf(pTmp, "%d%s", iType, strTmp);
-	
+	sprintf(pTmp, "%d%s", iType, (LPSTR)(LPCTSTR)strTmp);
 
 	m_socCom.Send(pTmp, 256);
 }
@@ -262,14 +261,15 @@ LPARAM CBingoCntDlg::OnReceive(UINT wParam, LPARAM lParam){
 
 	}
 
-	// 원하는 숫자 클릭 시
+	// 채팅
 	else if (iType == SOC_TEXT) {
-		str.Format(_T("%s"), pTmp + 1);
+		str.Format(_T("%s"), (LPCTSTR)(pTmp + 1));
 		m_list.AddString(str);
 	}
 
+	// 숫자 클릭
 	else if (iType == SOC_CHECK) {
-		str.Format(_T("%s"), pTmp + 1);
+		str.Format(_T("%s"), (LPCTSTR)(pTmp + 1));
 		int iRow = -1, iCol = -1;
 		NumToIndex(atoi((char *)(LPCTSTR)str), iRow, iCol);
 
@@ -286,6 +286,8 @@ LPARAM CBingoCntDlg::OnReceive(UINT wParam, LPARAM lParam){
 			SendGame(SOC_GAMEEND, "");
 			Sleep(1000);
 			SetGameEnd();
+			InitGame(); // 추가
+			Invalidate(TRUE); // 추가
 		}
 	}
 
@@ -479,7 +481,7 @@ void CBingoCntDlg::NumToIndex(int iNum, int& iRow, int& iCol) {
 	int i, j;
 	for (i = 0; i < 5; i++) {
 		for (j = 0; j < 5; j++) {
-			if (iNum = m_iGame[i][j]) {
+			if (iNum == m_iGame[i][j]) {
 				iRow = i;
 				iCol = j;
 				break;
@@ -506,7 +508,7 @@ BOOL CBingoCntDlg::IsGameEnd()
 	// 세로 검사
 	for (i = 0; i < 5; i++) {
 		for (j = 0; j < 5; j++) {
-			if (!m_bGame[j][j])
+			if (!m_bGame[j][i])
 				break;
 		}
 		if (j == 5) iLine++;
@@ -569,7 +571,7 @@ void CBingoCntDlg::OnLButtonDown(UINT nFlags, CPoint point)
 			DrawCheck(iRow, iCol);
 			// 선택한 숫자를 전송한다.
 			CString str;
-			str.Format(_T("%02d", m_iGame[iRow][iCol]));
+			str.Format(_T("%02d"), m_iGame[iRow][iCol]);
 			SendGame(SOC_CHECK, str);
 
 			// 차례 변경
@@ -610,7 +612,7 @@ void CBingoCntDlg::OnBnClickedButtonSend()
 	SendGame(SOC_TEXT, m_strSend);
 
 	// 전송한 데이터도 리스트박스에 보여준다
-	strTmp.Format(_T("%s"), pTmp);
+	strTmp.Format(_T("%s"), (LPCTSTR)pTmp);
 	int i = m_list.GetCount();
 	m_list.InsertString(i, strTmp);
 
