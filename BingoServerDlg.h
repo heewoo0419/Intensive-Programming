@@ -46,7 +46,8 @@ public:
 	int m_iOrder;
 
 	BOOL m_bConnect;	// 다른쪽과 접속했을때 TRUE
-	BOOL m_bStartSvr;	// 서버가 준비 끝나면 TRUE
+	//BOOL m_bStartSvr;	// 서버가 준비 끝나면 TRUE
+	BOOL m_bStartCnt;	// 클라이언트가 준비 끝나면 TRUE
 	BOOL m_bStart;		// 1~25를 다 채우면 TRUE
 	BOOL m_bMe;			// 내가 선택할 차예이면 TRUE
 	BOOL m_bCntEnd;		// 클라이언트가 끝났는지 검사
@@ -69,7 +70,5 @@ public:
 	BOOL IsGameEnd();
 	void SetGameEnd();
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
-
 	afx_msg void OnBnClickedButtonSend();
-
 };

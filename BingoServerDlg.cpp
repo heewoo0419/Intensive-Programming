@@ -74,6 +74,7 @@ BEGIN_MESSAGE_MAP(CBingoServerDlg, CDialogEx)
 	ON_WM_SYSCOMMAND()
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
+	ON_WM_LBUTTONDOWN()
 	ON_BN_CLICKED(IDC_BUTTON_SEND, &CBingoServerDlg::OnBnClickedButtonSend)
 	ON_MESSAGE(UM_ACCEPT, (LRESULT(AFX_MSG_CALL CWnd::*)(WPARAM, LPARAM))OnAccept)
 	ON_MESSAGE(UM_RECEIVE, (LRESULT(AFX_MSG_CALL CWnd::*)(WPARAM, LPARAM))OnReceive)
@@ -111,7 +112,12 @@ BOOL CBingoServerDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// 큰 아이콘을 설정합니다.
 	SetIcon(m_hIcon, FALSE);		// 작은 아이콘을 설정합니다.
 	// TODO: 여기에 추가 초기화 작업을 추가합니다.
+
+	InitGame();
+	m_bConnect = FALSE;
 	m_socCom = NULL;
+
+	// 방화벽 개방
 	WSADATA wsa;
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 		return -1;
@@ -125,7 +131,7 @@ BOOL CBingoServerDlg::OnInitDialog()
 		AfxMessageBox(error + strErr);
 	}
 	else {
-		MessageBox(_T("Success to Create Socket Server"));
+		//MessageBox(_T("Success to Create Socket Server"));
 	}
 	// 클라이언트 접속 대기
 	m_socServer.Listen();
@@ -133,8 +139,6 @@ BOOL CBingoServerDlg::OnInitDialog()
 	// 소켓 클래스와 메인 윈도우 (여기서는 CChatServerDlg)를 연결
 	m_socServer.Init(this->m_hWnd);
 
-	InitGame();
-	m_bConnect = FALSE;
 
 	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
 }
@@ -199,13 +203,13 @@ HCURSOR CBingoServerDlg::OnQueryDragIcon()
 }
 
 
-void CBingoServerDlg::SendGame(int iType, CString strTmp)
-{
-	// 데이터 전송
+// 데이터 전송
+void CBingoServerDlg::SendGame(int iType, CString strTmp) {
+
 	UpdateData(TRUE);
 	char pTmp[256];
 	memset(pTmp, '\0', 256);
-	sprintf(pTmp, "%d%s", iType, strTmp);
+	sprintf(pTmp, "%d%s", iType, (LPSTR)(LPCTSTR)strTmp);
 
 	m_socCom->Send(pTmp, 256);
 }
@@ -225,48 +229,56 @@ LPARAM CBingoServerDlg::OnAccept(UINT wParam, LPARAM lParam) {
 	m_strConnect = _T("접속성공");
 	m_strStatus = _T("게임을 초기화 하십시오.");
 
+	// 접속했으니 점속 값 변경
+	m_bConnect = TRUE;
 	SendGame(SOC_TEXT, "접속성공");
 	GetDlgItem(IDC_BUTTON_SEND)->EnableWindow(TRUE);
-	m_bConnect = TRUE;
-	//UpdateData(FALSE);
+	UpdateData(FALSE);
+
 	return TRUE;
 }
 
-LPARAM CBingoServerDlg::OnReceive(UINT wParam, LPARAM lParam) {
-	// 접속된 곳에서 데이터가 도착했을 때
 
+// 접속된 곳에서 데이터가 도착했을 때
+LPARAM CBingoServerDlg::OnReceive(UINT wParam, LPARAM lParam) {
+	
 	char pTmp[256];
 	CString strTmp, str;
 	memset(pTmp, '\0', 256);
 
 	// 데이터를 pTmp에 받는다
 	m_socCom->Receive(pTmp, 256);
-
+	
 	// strTmp에 헤더 저장
 	strTmp.Format(_T("%c"), pTmp[0]);
 
 	int iType = atoi((char*)(LPCTSTR)strTmp);
 
 	if (iType == SOC_GAMESTART) {
-		m_bStartSvr = TRUE;
+		m_bStartCnt = TRUE;
 
+		// 빙고판을 다 채웠을 경우
 		if (m_bStart) {
-			m_strMe = _T("상대방의 차례입니다.");
-			m_strStatus = _T("대기 하세요.");
-			m_bMe = FALSE;
+			m_strMe = _T("당신의 차례입니다.");
+			m_strStatus = _T("원하는곳을 선택하세요.");
+			m_bMe = TRUE;
 			UpdateData(FALSE);
 		}
-
 	}
 
+	// 메시지 전송
 	else if (iType == SOC_TEXT) {
-		str.Format(_T("%s"), pTmp + 1);
+		str.Format(_T("%s"), (LPCTSTR)(pTmp + 1));
+
 		m_list.AddString(str);
 	}
 
+	// 빙고판 클릭
 	else if (iType == SOC_CHECK) {
-		str.Format(_T("%s"), pTmp + 1);
+		str.Format(_T("%s"), (LPCTSTR)(pTmp + 1));
 		int iRow = -1, iCol = -1;
+
+		//숫자를 인덱스로 변경
 		NumToIndex(atoi((char*)(LPCTSTR)str), iRow, iCol);
 
 		DrawCheck(iRow, iCol);
@@ -277,44 +289,43 @@ LPARAM CBingoServerDlg::OnReceive(UINT wParam, LPARAM lParam) {
 		m_strStatus = _T("원하는 곳을 선택 하세요.");
 		UpdateData(FALSE);
 
+		// 서버 유저 승리 시
 		if (IsGameEnd()) {
-			m_bCntEnd = TRUE;
+			m_bSvrEnd = TRUE;
 			SendGame(SOC_GAMEEND, "");
 			Sleep(1000);
 			SetGameEnd();
+			InitGame();
+			Invalidate(TRUE);
 		}
 	}
 
+	// 클라이언트 유저 승리 시
 	else if (iType == SOC_GAMEEND) {
-		m_bSvrEnd = TRUE;
+		m_bCntEnd = TRUE;
 		Sleep(1000);
 		SetGameEnd();
 	}
+
 	return TRUE;
 }
 
+// 사각형 그리기 (250 *250 시작은 (10, 10))
+void CBingoServerDlg::DrawRec() {
 
-void CBingoServerDlg::DrawRec()
-{
-	// 사각형 그리기 (250 *250 시작은 (10, 10))
 	CClientDC dc(this);
 	CBrush br;
-
 	br.CreateSolidBrush(RGB(62, 62, 124));
 
 	CBrush* lbr = dc.SelectObject(&br);
-
 	dc.Rectangle(10, 10, 10 + 250, 10 + 250);
-
 	dc.SelectObject(lbr);
-
 }
-void CBingoServerDlg::DrawLine()
-{
-	// TODO: 여기에 구현 코드 추가.
+
+// 선 그리기
+void CBingoServerDlg::DrawLine() {
 
 	CClientDC dc(this);
-
 	CPen pen;
 
 	pen.CreatePen(PS_SOLID, 2, RGB(128, 128, 128));
@@ -335,11 +346,8 @@ void CBingoServerDlg::DrawLine()
 	dc.SelectObject(pen);
 }
 
-
-void CBingoServerDlg::DrawNum(int iRow, int iCol, int iNum)
-{
-	// TODO: 여기에 구현 코드 추가.
-
+// 숫자 그리기
+void CBingoServerDlg::DrawNum(int iRow, int iCol, int iNum) {
 	CString str;
 	str.Format(_T("%d"), iNum);
 
@@ -368,9 +376,7 @@ void CBingoServerDlg::DrawNum(int iRow, int iCol, int iNum)
 }
 
 
-void CBingoServerDlg::DrawCheck(int iRow, int iCol)
-{
-	// TODO: 여기에 구현 코드 추가.
+void CBingoServerDlg::DrawCheck(int iRow, int iCol) {
 
 	// 화면과 m_bGame 배열을 함께 체크한다
 	m_bGame[iRow][iCol] = TRUE;
@@ -401,13 +407,11 @@ void CBingoServerDlg::DrawCheck(int iRow, int iCol)
 
 	dc.SelectObject(lbr);
 	dc.SelectObject(lodp);
-
-
 }
 
+// 게임 초기화
+void CBingoServerDlg::InitGame() {
 
-void CBingoServerDlg::InitGame()
-{
 	for (int i = 0; i < 5; i++) {
 		for (int j = 0; j < 5; j++) {
 			m_iGame[i][j] = 0;
@@ -415,6 +419,7 @@ void CBingoServerDlg::InitGame()
 		}
 	}
 
+	m_bStartCnt = FALSE; // 추가
 	m_bStart = FALSE;
 	m_bMe = FALSE;
 	m_bSvrEnd = FALSE;
@@ -422,8 +427,9 @@ void CBingoServerDlg::InitGame()
 	m_iOrder = 1;
 }
 
-void CBingoServerDlg::OrderNum(int iRow, int iCol)
-{
+// 빙고판 번호 채우기
+void CBingoServerDlg::OrderNum(int iRow, int iCol) {
+	
 	if (m_bConnect && m_bStart)	return;
 
 	// 마우스를 클릭하는 순서대로 번호를 메긴다
@@ -432,15 +438,17 @@ void CBingoServerDlg::OrderNum(int iRow, int iCol)
 		DrawNum(iRow, iCol, m_iGame[iRow][iCol]);
 	}
 
+	// 칸을 다 채웠을 경우
 	if (m_iOrder > 25) {
 		// 게임 시작을 보낸다.
 		SendGame(SOC_GAMESTART, "");
 		m_bStart = TRUE;
 
-		if (m_bStartSvr) {
-			m_strMe = _T("상대방의 차례 입니다.");
-			m_strStatus = _T("대기하세요.");
-			m_bMe = FALSE;
+		// 클라이언트가 준비가 끝났으면
+		if (m_bStartCnt) {
+			m_strMe = _T("당신의 차례 입니다.");
+			m_strStatus = _T("원하는 곳을 선택하세요.");
+			m_bMe = TRUE;
 			UpdateData(FALSE);
 		}
 	}
@@ -465,12 +473,14 @@ void CBingoServerDlg::PosToIndex(CPoint pnt, int& iRow, int& iCol) {
 }
 
 
+// 숫자를 맞는 인덱스로 변환
 void CBingoServerDlg::NumToIndex(int iNum, int& iRow, int& iCol) {
-	// 숫자를 맞는 인덱스로 변환
+	
 	int i, j;
+
 	for (i = 0; i < 5; i++) {
 		for (j = 0; j < 5; j++) {
-			if (iNum = m_iGame[i][j]) {
+			if (iNum == m_iGame[i][j]) {
 				iRow = i;
 				iCol = j;
 				break;
@@ -479,7 +489,7 @@ void CBingoServerDlg::NumToIndex(int iNum, int& iRow, int& iCol) {
 	}
 }
 
-
+// 게임 종료 경우 확인
 BOOL CBingoServerDlg::IsGameEnd()
 {
 	int iLine = 0;
@@ -497,7 +507,7 @@ BOOL CBingoServerDlg::IsGameEnd()
 	// 세로 검사
 	for (i = 0; i < 5; i++) {
 		for (j = 0; j < 5; j++) {
-			if (!m_bGame[j][j])
+			if (!m_bGame[j][i])
 				break;
 		}
 		if (j == 5) iLine++;
@@ -516,13 +526,13 @@ BOOL CBingoServerDlg::IsGameEnd()
 		if (!m_bGame[i][j])
 			break;
 	}
+
 	if (i == 5) iLine++;
 
-	if (iLine >= 5)	return TRUE;
-	else return FALSE;
+	return (iLine >= 5) ? TRUE : FALSE;
 }
 
-
+// 승패 여부 메시지박스 띄우기
 void CBingoServerDlg::SetGameEnd()
 {
 	if (!m_bStart)	return;
@@ -531,7 +541,7 @@ void CBingoServerDlg::SetGameEnd()
 		MessageBox(_T("무승부"));
 		m_strStatus = _T("게임 끝 !! 무승부 입니다");
 	}
-	else if (!m_bCntEnd && m_bSvrEnd) {
+	else if (m_bCntEnd && !m_bSvrEnd) {
 		MessageBox(_T("패"));
 		m_strStatus = _T("게임 끝 !! 졌습니다");
 	}
@@ -546,7 +556,6 @@ void CBingoServerDlg::SetGameEnd()
 
 void CBingoServerDlg::OnLButtonDown(UINT nFlags, CPoint point)
 {
-	// TODO: 여기에 메시지 처리기 코드를 추가 및/또는 기본값을 호출합니다.
 	// 게임과 관련 없는 곳 클릭 시
 	if (point.x > 260 || point.y > 260)	return;
 	if (point.x < 10 || point.y < 10)	return;
@@ -555,13 +564,13 @@ void CBingoServerDlg::OnLButtonDown(UINT nFlags, CPoint point)
 	int iRow = -1, iCol = -1;
 	PosToIndex(point, iRow, iCol);
 
-
-	if (m_bStart && m_bStartSvr && m_bMe) {
+	// 칸을 다 채우고 클라이언트가 준비 끝났으며 내가 선택할 차례일 경우
+	if (m_bStart && m_bStartCnt && m_bMe) {
 		if (!m_bGame[iRow][iCol]) {
 			DrawCheck(iRow, iCol);
 			// 선택한 숫자를 전송한다.
 			CString str;
-			str.Format(_T("%02d", m_iGame[iRow][iCol]));
+			str.Format(_T("%02d"), m_iGame[iRow][iCol]);
 			SendGame(SOC_CHECK, str);
 
 			// 차례 변경
@@ -571,7 +580,8 @@ void CBingoServerDlg::OnLButtonDown(UINT nFlags, CPoint point)
 			UpdateData(FALSE);
 
 			if (IsGameEnd()) {
-				m_bCntEnd = TRUE;
+				//m_bCntEnd = TRUE;
+				m_bSvrEnd = TRUE;
 				SendGame(SOC_GAMEEND, "");
 				Sleep(1000);
 				SetGameEnd();
@@ -580,6 +590,8 @@ void CBingoServerDlg::OnLButtonDown(UINT nFlags, CPoint point)
 			}
 		}
 	}
+
+	// 칸 채우기
 	else {
 		OrderNum(iRow, iCol);
 	}
@@ -601,7 +613,7 @@ void CBingoServerDlg::OnBnClickedButtonSend()
 	m_socCom->Send(pTmp, 256);
 	SendGame(SOC_TEXT, m_strSend);
 	// 전송한 데이터도 리스트박스에 보여준다
-	strTmp.Format(_T("%s"), pTmp);
+	strTmp.Format(_T("%s"), (LPCTSTR)pTmp);
 	int i = m_list.GetCount();
 	m_list.InsertString(i, strTmp);
 
